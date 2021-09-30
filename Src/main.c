@@ -132,13 +132,9 @@ int main(void)
   MX_USART2_UART_Init();
   MX_USART3_UART_Init();
   MX_TIM2_Init();
+  MX_TIM6_Init();
   /* USER CODE BEGIN 2 */
   Enable_Rack();
-  while(1);
-
-
-
-
 
 	//__HAL_UART_ENABLE_IT(&huart1, UART_IT_RXNE); // ��������� ���������� �� ������ �� UART1
 //	Beep_Off();
@@ -157,6 +153,7 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+	printf("Entering while\r\n");
 	while (1)
 	{
 //		HAL_GPIO_WritePin(RACK_ON_OFF_GPIO_Port, RACK_ON_OFF_Pin, GPIO_PIN_SET);
@@ -169,10 +166,11 @@ int main(void)
 		}else {
 
 		}
-		debug_disp();
+//		debug_disp();
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+		printf("looped\r\n");
 	}
   /* USER CODE END 3 */
 }
@@ -185,8 +183,13 @@ void SystemClock_Config(void)
 {
   RCC_OscInitTypeDef RCC_OscInitStruct = {0};
   RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
-  RCC_PeriphCLKInitTypeDef PeriphClkInit = {0};
 
+  /** Configure the main internal regulator output voltage
+  */
+  if (HAL_PWREx_ControlVoltageScaling(PWR_REGULATOR_VOLTAGE_SCALE1) != HAL_OK)
+  {
+    Error_Handler();
+  }
   /** Initializes the RCC Oscillators according to the specified parameters
   * in the RCC_OscInitTypeDef structure.
   */
@@ -215,29 +218,6 @@ void SystemClock_Config(void)
   RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
 
   if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_USART2|RCC_PERIPHCLK_USART3
-                              |RCC_PERIPHCLK_I2C1|RCC_PERIPHCLK_ADC;
-  PeriphClkInit.Usart2ClockSelection = RCC_USART2CLKSOURCE_PCLK1;
-  PeriphClkInit.Usart3ClockSelection = RCC_USART3CLKSOURCE_PCLK1;
-  PeriphClkInit.I2c1ClockSelection = RCC_I2C1CLKSOURCE_PCLK1;
-  PeriphClkInit.AdcClockSelection = RCC_ADCCLKSOURCE_PLLSAI1;
-  PeriphClkInit.PLLSAI1.PLLSAI1Source = RCC_PLLSOURCE_MSI;
-  PeriphClkInit.PLLSAI1.PLLSAI1M = 1;
-  PeriphClkInit.PLLSAI1.PLLSAI1N = 16;
-  PeriphClkInit.PLLSAI1.PLLSAI1P = RCC_PLLP_DIV7;
-  PeriphClkInit.PLLSAI1.PLLSAI1Q = RCC_PLLQ_DIV2;
-  PeriphClkInit.PLLSAI1.PLLSAI1R = RCC_PLLR_DIV2;
-  PeriphClkInit.PLLSAI1.PLLSAI1ClockOut = RCC_PLLSAI1_ADC1CLK;
-  if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /** Configure the main internal regulator output voltage
-  */
-  if (HAL_PWREx_ControlVoltageScaling(PWR_REGULATOR_VOLTAGE_SCALE1) != HAL_OK)
   {
     Error_Handler();
   }
@@ -313,8 +293,12 @@ void Check_Status(void)
 		Beep_Off();
 		Enable_Rack();
 	}
-
 	if (is_Charge_OK())
+	{
+		Ignition_On();
+		PWR_CTRL.Charger_On = true;
+	}
+	else
 	{
 		Ignition_Off();
 		PWR_CTRL.Charger_On = false;
@@ -329,20 +313,15 @@ void Check_Status(void)
 			Beep_Off();
 		}
 	}
-	else
-	{
-		Ignition_On();
-		PWR_CTRL.Charger_On = true;
-	}
 
-	if  (is_Li_Ion_OK())
-	{
-		Disable_Li_Ion();
-	}
-	else
-	{
-		Enable_Li_Ion();
-	}
+//	if  (is_Li_Ion_OK())
+//	{
+//		Disable_Li_Ion();
+//	}
+//	else
+//	{
+//		Enable_Li_Ion();
+//	}
 
 	if ((TEMPVALUE > 25) && (PWR_CTRL.Twelve_V_On == true)) Enable_Fan();
 	else if ((TEMPVALUE < 20) && (PWR_CTRL.Twelve_V_On == true)) Disable_Fan();
@@ -364,6 +343,8 @@ void Display_Info(char* str, uint8_t x, uint8_t y, FontDef_t font)
 	LCD_SetPos(x, y);
 	LCD_String(str);
 #endif
+
+	puts(str);
 }
 
 void BTN_Event(void)
@@ -554,10 +535,20 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
 
 	if (PWR_CTRL.First_Time == true)
 	{
-		double temp = (CURRENT_RDIV_VALUE * BAT_ADC_VREF * adc.Charge_Current)/4096.0;
-		memcpy(&PWR_CTRL.Rack_VREF, &temp, sizeof(double));
-		temp = (CURRENT_RDIV_VALUE * BAT_ADC_VREF * adc.Rack_Current)/4096.0;
-		memcpy(&PWR_CTRL.Charge_VREF, &temp, sizeof(double));
+
+		double Rack_VREF_temp = (CURRENT_RDIV_VALUE * BAT_ADC_VREF * adc.Charge_Current)/4096.0;
+
+		double Charge_VREF_temp = (CURRENT_RDIV_VALUE * BAT_ADC_VREF * adc.Rack_Current)/4096.0;
+
+		Pwr_ctrl_t temp_s = {PWR_CTRL.Voltage_Li_Ion, PWR_CTRL.Voltage_Pb,
+			PWR_CTRL.Prev_Voltage_Pb, PWR_CTRL.Charge_Current, PWR_CTRL.Rack_Current,
+			Charge_VREF_temp, Rack_VREF_temp,
+			PWR_CTRL.Charger_On, PWR_CTRL.Ingition_On,
+			PWR_CTRL.Li_Ion_On, PWR_CTRL.Rack_On,
+			PWR_CTRL.Five_V_On, PWR_CTRL.Twelve_V_On,
+			PWR_CTRL.Fan_On, PWR_CTRL.ADC_busy,
+			PWR_CTRL.First_Time, PWR_CTRL.Beep_On};
+		memcpy(&PWR_CTRL, &temp_s, sizeof(Pwr_ctrl_t));
 //		PWR_CTRL.Rack_VREF    = (CURRENT_RDIV_VALUE * BAT_ADC_VREF * adc.Charge_Current)/4096.0;
 //		PWR_CTRL.Charge_VREF  = (CURRENT_RDIV_VALUE * BAT_ADC_VREF * adc.Rack_Current)/4096.0;
 

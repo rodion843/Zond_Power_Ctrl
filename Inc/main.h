@@ -42,6 +42,9 @@ extern "C" {
 
 #include "OneWire.h"
 
+
+#include "tim.h"
+
 /* USER CODE END Includes */
 
 /* Exported types ------------------------------------------------------------*/
@@ -365,14 +368,40 @@ static inline void Disable_Li_Ion(void){
 	HAL_GPIO_WritePin(LI_ION_ON_OFF_GPIO_Port,  LI_ION_ON_OFF_Pin,  GPIO_PIN_RESET);
 }
 
+//Timer
+
+static inline void Start_timer(TIM_HandleTypeDef *htim)
+{
+HAL_TIM_Base_Start(htim);
+}
+static inline void Stop_timer(TIM_HandleTypeDef *htim)
+{
+HAL_TIM_Base_Stop(htim);
+htim->Instance->CNT = 0;
+}
+static inline double CNTtoSeconds(TIM_HandleTypeDef *htim)
+{
+return htim->Instance-> CNT * 65535 / 32000000.0;
+}
+
 //is X ok?
+extern TIM_HandleTypeDef htim6;
 static inline bool is_Rack_OK(void){
 	if(PWR_CTRL.Rack_Current > MAX_RACK_CURRENT)
 	{
-		return true;
+		Start_timer(&htim6);
+		if(CNTtoSeconds(&htim6) > 10)
+		{
+			return true;
+		}
+		else
+		{
+			return false;
+		}
 	}
 	else
 	{
+		Stop_timer(&htim6);
 		return false;
 	}
 }
@@ -413,6 +442,8 @@ static inline bool is_Li_Ion_OK(void){
 		return false;
 	}
 }
+
+
 /* USER CODE END Private defines */
 
 #ifdef __cplusplus
